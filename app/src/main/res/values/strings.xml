@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">OpenCode</string>
+    <string name="chat_tab">Chat</string>
+    <string name="files_tab">Archivos</string>
+    <string name="projects_tab">Proyectos</string>
+    <string name="settings_tab">Ajustes</string>
+</resources>
