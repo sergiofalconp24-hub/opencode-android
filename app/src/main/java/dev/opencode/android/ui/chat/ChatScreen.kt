@@ -60,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.opencode.android.data.model.ChatRole
 import dev.opencode.android.data.model.ChatUiMessage
 import dev.opencode.android.ui.theme.DeepBlue
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

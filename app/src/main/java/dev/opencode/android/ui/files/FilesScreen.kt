@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Folder
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
@@ -187,7 +186,7 @@ private fun EntryRow(entry: dev.opencode.android.data.model.FileEntry, onClick: 
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        val ic = if (entry.isDirectory) Icons.AutoMirrored.Filled.Folder else Icons.Default.Description
+        val ic = if (entry.isDirectory) Icons.Filled.Folder else Icons.Default.Description
         Icon(
             ic,
             contentDescription = null,
