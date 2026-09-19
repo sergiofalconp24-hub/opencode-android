@@ -1,5 +1,6 @@
 package dev.opencode.android.ui.settings
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,15 +57,19 @@ fun SettingsScreen(
         topBar = { TopAppBar(title = { Text("Ajustes") }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(
+        Box(
             Modifier
-                .align(Alignment.CenterHorizontally)
-                .fillMaxWidth()
-                .widthIn(max = 640.dp)
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
+                .fillMaxSize()
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 640.dp)
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+            ) {
             Text(
                 "Conexión al servidor",
                 style = MaterialTheme.typography.titleSmall,
@@ -182,6 +187,7 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }
