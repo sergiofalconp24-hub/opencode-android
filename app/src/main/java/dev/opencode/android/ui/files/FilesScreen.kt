@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -36,6 +37,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,6 +48,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.opencode.android.util.Permissions
 import android.os.Build
@@ -65,6 +69,23 @@ fun FilesScreen(
         ActivityResultContracts.RequestPermission()
     ) {
         viewModel.refresh()
+    }
+
+    val allFilesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        viewModel.refresh()
+    }
+
+    // Al volver de Ajustes (o de cualquier pausa) vuelve a comprobar el acceso,
+    // así el botón de pedir permiso se actualiza solo.
+    val lifecycleOwner = context as? androidx.lifecycle.LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh()
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
     }
 
     val tabs = listOf("Dispositivo" to FilesMode.DEVICE, "Proyecto" to FilesMode.PROJECT)
@@ -124,48 +145,49 @@ fun FilesScreen(
                 }
             }
 
-            when {
-                state.loading -> CircularProgressIndicator(
-                    Modifier.padding(top = 40.dp).align(Alignment.CenterHorizontally)
-                )
-                !state.hasAccess && selectedTab == FilesMode.DEVICE -> PermissionGate(
-                    onGrant = {
-                        val activity = context as? android.app.Activity
-                        if (activity != null) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                Permissions.openAllFilesSettings(activity)
-                            } else {
-                                permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                when {
+                    state.loading -> CircularProgressIndicator(Modifier.padding(top = 40.dp))
+                    !state.hasAccess && selectedTab == FilesMode.DEVICE -> PermissionGate(
+                        onGrant = {
+                            val activity = context as? android.app.Activity
+                            if (activity != null) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    allFilesLauncher.launch(Permissions.allFilesSettingsIntent(activity))
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                                }
                             }
-                        }
-                    },
-                )
-                state.entries.isEmpty() -> Column(
-                    Modifier.fillMaxWidth().padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        Icons.Default.Folder,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(40.dp),
+                        },
+                        modifier = Modifier.widthIn(max = 520.dp),
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        state.note ?: "Carpeta vacía",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(state.entries, key = { it.path }) { entry ->
-                        EntryRow(
-                            entry = entry,
-                            onClick = {
-                                if (entry.isDirectory) viewModel.navigateTo(entry)
-                                else onOpenFile(state.mode, entry.path, entry.name)
-                            },
+                    state.entries.isEmpty() -> Column(
+                        Modifier.fillMaxWidth().widthIn(max = 760.dp).padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(40.dp),
                         )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            state.note ?: "Carpeta vacía",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> LazyColumn(Modifier.fillMaxSize().widthIn(max = 760.dp)) {
+                        items(state.entries, key = { it.path }) { entry ->
+                            EntryRow(
+                                entry = entry,
+                                onClick = {
+                                    if (entry.isDirectory) viewModel.navigateTo(entry)
+                                    else onOpenFile(state.mode, entry.path, entry.name)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -205,9 +227,9 @@ private fun EntryRow(entry: dev.opencode.android.data.model.FileEntry, onClick: 
 }
 
 @Composable
-private fun PermissionGate(onGrant: () -> Unit) {
+private fun PermissionGate(onGrant: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
+        modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

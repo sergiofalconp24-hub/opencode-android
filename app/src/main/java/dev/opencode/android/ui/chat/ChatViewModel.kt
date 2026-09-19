@@ -20,6 +20,7 @@ data class ChatUiState(
     val sessions: List<SessionInfo> = emptyList(),
     val activeSessionId: String? = null,
     val activeTitle: String = "",
+    val model: String? = null,
     val messages: List<ChatUiMessage> = emptyList(),
     val isStreaming: Boolean = false,
     val connected: Boolean = true,
@@ -49,11 +50,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         viewModelScope.launch {
-            _state.update { it.copy(connected = true) }
             val sessions = runCatching { repo.client()?.listSessions() ?: emptyList() }.getOrDefault(emptyList())
+            val health = runCatching { repo.client()?.health() }.getOrNull()
+            val model = runCatching { repo.client()?.defaultModel() }.getOrNull()
             _state.update {
-                val currentId = it.activeSessionId
-                it.copy(sessions = sessions, connected = sessions.isNotEmpty() || it.connected)
+                it.copy(
+                    sessions = sessions,
+                    model = model,
+                    connected = health != null || sessions.isNotEmpty(),
+                )
             }
             if (_state.value.activeSessionId == null && sessions.isNotEmpty()) {
                 selectSession(sessions.first().id)
@@ -115,7 +120,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         promptJob?.cancel()
         viewModelScope.launch {
             val sessionId = ensureSession()
-            if (sessionId == null) return@launch
+            if (sessionId == null) {
+                _state.update { st ->
+                    st.copy(
+                        messages = st.messages + ChatUiMessage(
+                            id = "err-${System.currentTimeMillis()}",
+                            role = ChatRole.ASSISTANT,
+                            text = "No se pudo contactar con el servidor de opencode.\nComprueba que «opencode serve» está activo y revisa la URL en Ajustes.",
+                            isError = true,
+                        ),
+                    )
+                }
+                return@launch
+            }
             _state.update { st ->
                 st.copy(
                     messages = st.messages + listOf(
@@ -123,23 +140,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         ChatUiMessage(id = "a-${System.currentTimeMillis()}", role = ChatRole.ASSISTANT, text = "", isStreaming = true),
                     ),
                     isStreaming = true,
+                    connected = true,
                 )
             }
             activeGenerationMessageId = _state.value.messages.last().id
 
             val result = runCatching { repo.client()?.sendMessage(sessionId, text) }
-            finalizeGeneration(result.isSuccess)
-            result.getOrNull()?.let { (finalText, tools) ->
+            val assistant = result.getOrNull()
+            assistant?.let { (finalText, tools) ->
                 _state.update { st ->
                     val m = st.messages.toMutableList()
                     val idx = m.indexOfLast { it.isStreaming }
                     if (idx >= 0) {
-                        m[idx] = m[idx].copy(text = finalText.ifBlank { m[idx].text }, isStreaming = false, toolName = tools.firstOrNull())
+                        m[idx] = m[idx].copy(
+                            text = finalText.ifBlank { m[idx].text },
+                            isStreaming = false,
+                            isError = false,
+                            toolName = tools.firstOrNull(),
+                        )
                     }
                     st.copy(messages = m)
                 }
             }
-            activeGenerationMessageId = null
+            finalizeGeneration(assistant != null)
+            refresh()
         }
     }
 
@@ -164,14 +188,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         activeGenerationMessageId = null
     }
 
-    private fun ensureSession(): String? {
+    private suspend fun ensureSession(): String? {
         val current = _state.value.activeSessionId
         if (current != null) return current
-        val sessions = _state.value.sessions
-        val existing = sessions.firstOrNull()
+        val existing = _state.value.sessions.firstOrNull()
         if (existing != null) {
             _state.update { it.copy(activeSessionId = existing.id, activeTitle = existing.title) }
             return existing.id
+        }
+        // Sin sesión: créala para que el primer mensaje siempre se pueda enviar.
+        val created = runCatching { repo.client()?.createSession() }.getOrNull()
+        if (created != null) {
+            _state.update { it.copy(activeSessionId = created.id, activeTitle = created.title, messages = emptyList()) }
+            refresh()
+            return created.id
         }
         return null
     }
@@ -181,12 +211,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (!_state.value.isStreaming) return
         val sessionId = _state.value.activeSessionId ?: return
         val obj = JsonParser.parseString(e.data).asJsonObject
-        val evSession = obj.get("sessionID")?.asString ?: return
+        val props = obj.get("properties")?.asJsonObject ?: return
+        val evSession = props.get("sessionID")?.asString ?: return
         if (evSession != sessionId) return
 
         when (e.type) {
             "message.part.updated" -> {
-                val part = obj.get("part")?.asJsonObject ?: return
+                val part = props.get("part")?.asJsonObject ?: return
                 if (part.get("type")?.asString != "text") return
                 val text = part.get("text")?.asString ?: return
                 _state.update { st ->
@@ -197,10 +228,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             "message.error" -> {
+                val text = props.get("text")?.asString ?: "El servidor devolvió un error"
                 _state.update { st ->
                     val m = st.messages.toMutableList()
                     val idx = m.indexOfLast { it.isStreaming }
-                    if (idx >= 0) m[idx] = m[idx].copy(isStreaming = false, isError = true)
+                    if (idx >= 0) m[idx] = m[idx].copy(isStreaming = false, isError = true, text = text)
                     st.copy(messages = m, isStreaming = false)
                 }
                 activeGenerationMessageId = null

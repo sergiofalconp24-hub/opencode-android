@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -59,15 +60,18 @@ fun ProjectsScreen(
             )
         },
     ) { padding ->
+        val contentMax = Modifier.fillMaxSize().padding(padding)
+
         if (state.loading) {
-            Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(contentMax, horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.height(48.dp))
                 CircularProgressIndicator()
             }
             return@Scaffold
         }
 
-        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+        Box(contentMax, contentAlignment = Alignment.TopCenter) {
+            LazyColumn(Modifier.fillMaxSize().widthIn(max = 760.dp)) {
             if (state.error != null) {
                 item {
                     Text(
@@ -166,6 +170,7 @@ fun ProjectsScreen(
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
+            }
         }
     }
 }

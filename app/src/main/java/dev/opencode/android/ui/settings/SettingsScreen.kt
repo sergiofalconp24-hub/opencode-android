@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -57,7 +58,9 @@ fun SettingsScreen(
     ) { padding ->
         Column(
             Modifier
-                .fillMaxSize()
+                .align(Alignment.CenterHorizontally)
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()

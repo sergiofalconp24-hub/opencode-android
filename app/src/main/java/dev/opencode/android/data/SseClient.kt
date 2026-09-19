@@ -1,6 +1,7 @@
 package dev.opencode.android.data
 
 import android.util.Log
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -33,11 +34,18 @@ class SseClient(
 
     private val eventSourceListener = object : EventSourceListener() {
         override fun onOpen(eventSource: EventSource, response: Response) {
+            retries = 0
             Log.d(TAG, "SSE abierto")
         }
 
         override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
-            val t = type ?: "message"
+            // El servidor no envía «event:»; el tipo va dentro del JSON de data.
+            val jsonType = try {
+                JsonParser.parseString(data).asJsonObject.get("type")?.asString
+            } catch (_: Exception) {
+                null
+            }
+            val t = jsonType ?: type ?: "message"
             try {
                 listener?.onServerEvent(t, data)
             } catch (e: Exception) {

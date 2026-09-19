@@ -3,6 +3,7 @@ package dev.opencode.android.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -75,9 +76,18 @@ fun ChatScreen(
     var input by rememberSaveable { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length) {
+    LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.size - 1)
+            listState.scrollToItem(state.messages.lastIndex)
+        }
+    }
+
+    // Durante el streaming solo baja si ya estás cerca del final (no pelea con el usuario).
+    LaunchedEffect(state.messages.lastOrNull()?.let { if (it.isStreaming) it.text.length else null }) {
+        val info = listState.layoutInfo
+        val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+        if (info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 2) {
+            listState.scrollToItem(info.totalItemsCount - 1)
         }
     }
 
@@ -117,7 +127,11 @@ fun ChatScreen(
                                     maxLines = 1,
                                 )
                                 Text(
-                                    text = if (state.connected) "Servidor local · opencode" else "Desconectado",
+                                    text = when {
+                                        !state.connected -> "Desconectado"
+                                        state.model != null -> "Modelo: ${state.model}"
+                                        else -> "Servidor local · opencode"
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -136,45 +150,59 @@ fun ChatScreen(
                     )
                 },
             ) { padding ->
-                Column(
+                BoxWithConstraints(
                     Modifier
                         .fillMaxSize()
                         .padding(padding)
                         .imePadding()
                 ) {
-                    if (state.messages.isEmpty()) {
-                        EmptyChat(
-                            streaming = state.isStreaming,
-                            modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                    val contentMax = minOf(760.dp, maxWidth)
+                    val bubbleMax = maxWidth * 0.88f
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .width(contentMax)
                         ) {
-                            items(state.messages, key = { it.id }) { msg ->
-                                MessageBubble(msg)
+                            if (state.messages.isEmpty()) {
+                                EmptyChat(
+                                    streaming = state.isStreaming,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    items(state.messages, key = { it.id }) { msg ->
+                                        MessageBubble(msg, bubbleMax)
+                                    }
+                                }
                             }
                         }
-                    }
 
-                    InputBar(
-                        value = input,
-                        onValueChange = { input = it },
-                        isStreaming = state.isStreaming,
-                        onSend = {
-                            viewModel.send(input)
-                            input = ""
-                            focusManager.clearFocus()
-                        },
-                        onStop = { viewModel.stop() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                            .navigationBarsPadding(),
-                    )
+                        InputBar(
+                            value = input,
+                            onValueChange = { input = it },
+                            isStreaming = state.isStreaming,
+                            onSend = {
+                                viewModel.send(input)
+                                input = ""
+                                focusManager.clearFocus()
+                            },
+                            onStop = { viewModel.stop() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(max = contentMax)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .navigationBarsPadding(),
+                        )
+                    }
                 }
             }
         }
@@ -218,7 +246,7 @@ private fun EmptyChat(streaming: Boolean, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MessageBubble(msg: ChatUiMessage) {
+private fun MessageBubble(msg: ChatUiMessage, maxBubbleWidth: Dp) {
     val isUser = msg.role == ChatRole.USER
     Row(
         Modifier.fillMaxWidth(),
@@ -227,7 +255,7 @@ private fun MessageBubble(msg: ChatUiMessage) {
         if (isUser) {
             Box(
                 modifier = Modifier
-                    .widthIn(max = 320.dp)
+                    .widthIn(max = maxBubbleWidth)
                     .clip(RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
                     .background(
                         Brush.linearGradient(listOf(DeepBlue, Color(0xFF3B55D4))),
@@ -263,7 +291,7 @@ private fun MessageBubble(msg: ChatUiMessage) {
                     }
                     Box(
                         modifier = Modifier
-                            .widthIn(max = 320.dp)
+                            .widthIn(max = maxBubbleWidth)
                             .clip(RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant)
                             .padding(horizontal = 14.dp, vertical = 10.dp),

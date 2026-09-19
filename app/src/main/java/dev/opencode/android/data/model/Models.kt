@@ -64,10 +64,55 @@ object Json {
     fun sessionFrom(obj: JsonObject): SessionInfo {
         val id = obj.get("id")?.asString ?: ""
         val title = obj.get("title")?.asString ?: obj.get("summary")?.asString ?: "Nueva conversación"
-        val time = obj.get("time")?.asString ?: ""
+        val time = formatTime(obj.get("time"))
         val agent = obj.get("agent")?.asString
-        val model = obj.get("model")?.asString
+        val model = modelLabel(obj.get("model"))
         return SessionInfo(id, title, time, agent, model)
+    }
+
+    fun formatTime(el: JsonElement?): String {
+        return try {
+            when {
+                el == null || el.isJsonNull -> ""
+                el.isJsonObject -> {
+                    val ms = el.asJsonObject.get("updated")?.asLong
+                        ?: el.asJsonObject.get("created")?.asLong ?: return ""
+                    formatMillis(ms)
+                }
+                else -> el.asString
+            }
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun formatMillis(ms: Long): String {
+        return try {
+            val sdf = java.text.SimpleDateFormat(
+                "dd MMM yyyy HH:mm", java.util.Locale.getDefault()
+            ).apply { timeZone = java.util.TimeZone.getDefault() }
+            sdf.format(java.util.Date(ms))
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    /** El campo model puede ser string ("big-pickle") u objeto {providerID, modelID}. */
+    fun modelLabel(el: JsonElement?): String? {
+        return try {
+            when {
+                el == null || el.isJsonNull -> null
+                el.isJsonObject -> {
+                    val o = el.asJsonObject
+                    val mid = o.get("modelID")?.asString ?: o.get("id")?.asString ?: return null
+                    val p = o.get("providerID")?.asString
+                    if (p != null) "$p/$mid" else mid
+                }
+                else -> el.asString
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun sessions(arr: JsonArray): List<SessionInfo> {
@@ -82,7 +127,7 @@ object Json {
 
     fun projectFrom(obj: JsonObject): ProjectInfo {
         val id = obj.get("id")?.asString ?: ""
-        val path = obj.get("path")?.asString ?: ""
+        val path = obj.get("path")?.asString ?: obj.get("worktree")?.asString ?: ""
         val worktree = obj.get("worktree")?.asString
         return ProjectInfo(id, path, worktree)
     }
@@ -112,11 +157,14 @@ object Json {
             when (type) {
                 "text" -> sb.append(obj.get("text")?.asString.orEmpty())
                 "tool" -> {
-                    val name = obj.get("tool")?.asJsonObject?.get("name")?.asString ?: "tool"
-                    val call = obj.get("tool")?.asJsonObject?.get("call")?.asJsonObject
-                    val state = call?.get("state")?.asString ?: "running"
-                    val title = obj.get("state")?.asString
-                    tools.add(listOfNotNull(name).joinToString(" ") { it } + (title?.let { " · $it" } ?: ""))
+                    try {
+                        val name = obj.get("tool")?.asJsonObject?.get("name")?.asString ?: "tool"
+                        val call = obj.get("tool")?.asJsonObject?.get("call")?.asJsonObject
+                        val state = call?.get("state")?.asString ?: "running"
+                        val title = obj.get("state")?.asString
+                        tools.add(listOfNotNull(name).joinToString(" ") { it } + (title?.let { " · $it" } ?: ""))
+                    } catch (_: Exception) {
+                    }
                 }
             }
         }

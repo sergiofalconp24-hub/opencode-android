@@ -80,16 +80,7 @@ class OpenCodeRepository(context: Context) {
                     scope.launch {
                         _events.emit(SseEvent(type, data))
                         if (type == "permission.requested") {
-                            val sessionId = try {
-                                JsonParser.parseString(data).asJsonObject.get("sessionID")?.asString
-                            } catch (_: Exception) {
-                                null
-                            }
-                            val permissionId = try {
-                                JsonParser.parseString(data).asJsonObject.get("permissionID")?.asString
-                            } catch (_: Exception) {
-                                null
-                            }
+                            val (sessionId, permissionId) = parsePermissionRequest(data)
                             if (sessionId != null && permissionId != null && autoAcceptTools()) {
                                 c.respondPermission(sessionId, permissionId, true)
                             }
@@ -105,6 +96,19 @@ class OpenCodeRepository(context: Context) {
     }
 
     fun client(): OpenCodeClient? = client?.takeIf { connectedUrl == lastUrl }
+
+    /** Extrae sessionID/permissionID del evento, desde «properties» o a nivel raíz. */
+    private fun parsePermissionRequest(data: String): Pair<String?, String?> {
+        try {
+            val obj = JsonParser.parseString(data).asJsonObject
+            val props = obj.get("properties")?.asJsonObject
+            val sessionId = (props?.get("sessionID") ?: obj.get("sessionID"))?.asString
+            val permissionId = (props?.get("permissionID") ?: obj.get("permissionID"))?.asString
+            return sessionId to permissionId
+        } catch (_: Exception) {
+            return null to null
+        }
+    }
 
     fun close() {
         sse?.close()

@@ -91,10 +91,10 @@ class FileEditorViewModel(
     }
 
     fun markSaved() {
-        _state.update { it.copy(lastSaved = true, canWrite = true) }
+        _state.update { it.copy(lastSaved = true) }
     }
 
-    /** Escribe en un destino SAF elegido por el usuario. */
+    /** Escribe en un destino SAF elegido por el usuario. Nunca marca canWrite: la ruta original sigue sin ser escribible. */
     fun writeTo(uri: android.net.Uri) {
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) {
@@ -105,7 +105,7 @@ class FileEditorViewModel(
                     false
                 }
             }
-            _state.update { it.copy(lastSaved = ok, canWrite = true) }
+            _state.update { it.copy(lastSaved = ok) }
         }
     }
 

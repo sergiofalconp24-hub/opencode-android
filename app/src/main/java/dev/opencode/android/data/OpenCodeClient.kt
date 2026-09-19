@@ -34,7 +34,7 @@ class OpenCodeClient(
     private val json = "application/json; charset=utf-8".toMediaType()
     private val http: OkHttpClient = okHttp.newBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(600, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
@@ -68,28 +68,44 @@ class OpenCodeClient(
         http.newCall(builder.build()).execute()
     }
 
+    private fun parseObject(text: String?): JsonObject? = try {
+        text?.let { JsonParser.parseString(it).takeIf { el -> el.isJsonObject }?.asJsonObject }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun parseArray(text: String?): JsonArray? = try {
+        text?.let { JsonParser.parseString(it).takeIf { el -> el.isJsonArray }?.asJsonArray }
+    } catch (_: Exception) {
+        null
+    }
+
     private suspend fun jsonObject(method: String, pathAndQuery: String, body: String? = null): JsonObject? {
         request(method, pathAndQuery, body).use { resp ->
             if (!resp.isSuccessful) return null
-            return JsonParser.parseString(resp.body?.string() ?: "{}").asJsonObject
+            return parseObject(resp.body?.string())
         }
     }
 
-    /** Ejecuta paths primario y alternativo si el primario da 404. */
+    /**
+     * Ejecuta paths primario y alternativo. IMPORTANTE: el servidor sirve la SPA (HTML)
+     * con 200 en rutas inexistentes, por eso se valida que la respuesta sea JSON válido
+     * y se usa el fallback cuando no lo es.
+     */
     private suspend fun sendJson(
         body: String,
         primary: String,
         fallback: String? = null,
     ): JsonObject? {
-        request("POST", primary, body).use { resp ->
-            if (resp.isSuccessful) return JsonParser.parseString(resp.body?.string() ?: "{}").asJsonObject
-            if (fallback != null && resp.code == 404) {
-                request("POST", fallback, body).use { resp2 ->
-                    if (resp2.isSuccessful) return JsonParser.parseString(resp2.body?.string() ?: "{}").asJsonObject
-                }
-            }
-            return null
+        var obj = request("POST", primary, body).use { resp ->
+            if (resp.isSuccessful) parseObject(resp.body?.string()) else null
         }
+        if (obj == null && fallback != null) {
+            obj = request("POST", fallback, body).use { resp ->
+                if (resp.isSuccessful) parseObject(resp.body?.string()) else null
+            }
+        }
+        return obj
     }
 
     suspend fun health(): String? = withContext(Dispatchers.IO) {
@@ -101,7 +117,7 @@ class OpenCodeClient(
     suspend fun listSessions(): List<SessionInfo> = withContext(Dispatchers.IO) {
         request("GET", "/session").use { resp ->
             if (!resp.isSuccessful) return@withContext emptyList()
-            val arr = JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+            val arr = parseArray(resp.body?.string()) ?: return@withContext emptyList()
             Json.sessions(arr)
         }
     }
@@ -122,21 +138,20 @@ class OpenCodeClient(
         request("PATCH", "/session/$id", "{\"title\":\"${escapeJson(title)}\"}").use { it.isSuccessful }
     }
 
-    /** Mensajes históricos de una sesión. */
+    /** Mensajes históricos de una sesión. /messages no existe en 1.18.x (devuelve HTML); usa /message. */
     suspend fun listMessages(sessionId: String, limit: Int = 80): List<ChatUiMessage> =
         withContext(Dispatchers.IO) {
-            val primary = request("GET", "/session/$sessionId/messages?limit=$limit")
-            val bodyStr = if (!primary.isSuccessful) {
-                primary.close()
-                request("GET", "/session/$sessionId/message?limit=$limit").use { it.body?.string() }
-            } else primary.body?.string()?.also { primary.close() }
-
-            if (bodyStr == null) return@withContext emptyList()
-            val arr = try {
-                JsonParser.parseString(bodyStr).asJsonArray
-            } catch (_: Exception) {
-                return@withContext emptyList()
+            var bodyStr = request("GET", "/session/$sessionId/messages?limit=$limit").use { resp ->
+                if (resp.isSuccessful) resp.body?.string() else null
             }
+            var arr = parseArray(bodyStr)
+            if (arr == null) {
+                bodyStr = request("GET", "/session/$sessionId/message?limit=$limit").use { resp ->
+                    if (resp.isSuccessful) resp.body?.string() else null
+                }
+                arr = parseArray(bodyStr)
+            }
+            if (arr == null) return@withContext emptyList()
             val out = mutableListOf<ChatUiMessage>()
             for (e in arr) {
                 val obj = e.asJsonObject
@@ -183,11 +198,7 @@ class OpenCodeClient(
     suspend fun listProjects(): List<ProjectInfo> = withContext(Dispatchers.IO) {
         request("GET", "/project").use { resp ->
             if (!resp.isSuccessful) return@withContext emptyList()
-            val arr = try {
-                JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
-            } catch (_: Exception) {
-                return@withContext emptyList()
-            }
+            val arr = parseArray(resp.body?.string()) ?: return@withContext emptyList()
             arr.mapNotNull { e ->
                 try {
                     if (e.isJsonObject) Json.projectFrom(e.asJsonObject) else null
@@ -205,11 +216,7 @@ class OpenCodeClient(
         val q = path?.let { "?path=${encode(it)}" } ?: ""
         request("GET", "/file$q").use { resp ->
             if (!resp.isSuccessful) return@withContext emptyList()
-            val arr = try {
-                JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
-            } catch (_: Exception) {
-                return@withContext emptyList()
-            }
+            val arr = parseArray(resp.body?.string()) ?: return@withContext emptyList()
             if (arr.isEmpty()) return@withContext emptyList()
             Json.fileEntries(arr)
         }
@@ -232,11 +239,7 @@ class OpenCodeClient(
         val q = "query=${encode(query)}" + (type?.let { "&type=$it" } ?: "")
         request("GET", "/find/file?$q").use { resp ->
             if (!resp.isSuccessful) return@withContext emptyList()
-            val arr = try {
-                JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
-            } catch (_: Exception) {
-                return@withContext emptyList()
-            }
+            val arr = parseArray(resp.body?.string()) ?: return@withContext emptyList()
             arr.map { it.asString }
         }
     }
@@ -244,11 +247,7 @@ class OpenCodeClient(
     suspend fun agents(): List<AgentInfo> = withContext(Dispatchers.IO) {
         request("GET", "/agent").use { resp ->
             if (!resp.isSuccessful) return@withContext emptyList()
-            val arr = try {
-                JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
-            } catch (_: Exception) {
-                return@withContext emptyList()
-            }
+            val arr = parseArray(resp.body?.string()) ?: return@withContext emptyList()
             arr.mapNotNull { e ->
                 try {
                     val o = e.asJsonObject
@@ -267,11 +266,7 @@ class OpenCodeClient(
     suspend fun defaultModel(): String? = withContext(Dispatchers.IO) {
         request("GET", "/config/providers").use { resp ->
             if (!resp.isSuccessful) return@withContext null
-            val obj = try {
-                JsonParser.parseString(resp.body?.string() ?: "{}").asJsonObject
-            } catch (_: Exception) {
-                return@withContext null
-            }
+            val obj = parseObject(resp.body?.string()) ?: return@withContext null
             val def = obj.get("default")?.asJsonObject
             val p = def?.keySet()?.firstOrNull() ?: return@withContext null
             val m = def.get(p)?.asString ?: return@withContext null

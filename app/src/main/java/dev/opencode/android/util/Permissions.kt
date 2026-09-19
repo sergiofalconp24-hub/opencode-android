@@ -26,15 +26,18 @@ object Permissions {
             PackageManager.PERMISSION_GRANTED
     }
 
-    fun openAllFilesSettings(activity: Activity) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+    fun allFilesSettingsIntent(activity: Activity): Intent {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                 .setData(Uri.parse("package:${activity.packageName}"))
-            activity.startActivity(intent)
         } else {
-            activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                .setData(Uri.parse("package:${activity.packageName}")))
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:${activity.packageName}"))
         }
+    }
+
+    fun openAllFilesSettings(activity: Activity) {
+        activity.startActivity(allFilesSettingsIntent(activity))
     }
 
     val storagePermissionContract = ActivityResultContracts.RequestPermission()
