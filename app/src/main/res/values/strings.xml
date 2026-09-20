@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenCode</string>
+    <string name="notif_channel_name">OpenCode Server</string>
+    <string name="notif_channel_desc">Mantiene el servidor local del agente</string>
+</resources>
