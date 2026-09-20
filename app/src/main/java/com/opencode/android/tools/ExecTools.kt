@@ -24,7 +24,10 @@ class GrepTool : Tool {
         val ignoreCase = args.optBoolean("ignoreCase", false)
 
         return try {
-            val regex = Regex(pattern, if (ignoreCase) RegexOption.IGNORE_CASE else RegexOption.NONE)
+            val regex = Regex(
+                pattern,
+                if (ignoreCase) setOf(RegexOption.IGNORE_CASE) else emptySet()
+            )
             val results = mutableListOf<String>()
             val files = if (base.isFile) listOf(base) else base.walkTopDown().filter { it.isFile }.toList()
             var total = 0
